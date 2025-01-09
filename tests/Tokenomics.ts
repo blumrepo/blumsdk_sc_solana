@@ -1,3 +1,5 @@
+import { LAMPORTS_PER_SOL } from '@solana/web3.js'
+
 const PRECISION = 9n
 
 export class Tokenomics {
@@ -37,16 +39,18 @@ export class Tokenomics {
     return sqrValue / this.#curveA ** 2n / mult
   }
 
-  calculateSolAmountForBuy(supply: bigint, amount: bigint) {
-    return this.#fReverse(supply + amount) - this.#fReverse(supply)
-  }
-
-  calculateSolAmountForSell(supply: bigint, amount: bigint) {
-    return this.#fReverse(supply) - this.#fReverse(supply - amount)
-  }
-
-  calculateTokenAmount(totalSupply: bigint, solAmount: bigint) {
-    const solReserve = this.#fReverse(totalSupply)
+  calculateTokenAmount(circulatingSupply: bigint, solAmount: bigint) {
+    const solReserve = this.#fReverse(circulatingSupply)
     return this.#f(solReserve + solAmount) - this.#f(solReserve)
+  }
+
+  calculateSolAmount(circulatingSupply: bigint, tokenAmount: bigint) {
+    return this.#fReverse(circulatingSupply) - this.#fReverse(circulatingSupply - tokenAmount)
+  }
+
+  calculatePrice(circulatingSupply: bigint) {
+    const one = LAMPORTS_PER_SOL
+    const amountForOneSol = this.calculateTokenAmount(circulatingSupply, BigInt(one))
+    return one / Number(amountForOneSol)
   }
 }

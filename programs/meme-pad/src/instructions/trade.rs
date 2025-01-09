@@ -8,7 +8,7 @@ use {
 
 use crate::state::{BondingCurve, BondingCurveAccount, GlobalConfig};
 
-pub fn buy(ctx: Context<Trade>, amount: u64, max_sol_cost: u64) -> Result<()> {
+pub fn buy(ctx: Context<Trade>, sol_amount: u64, min_token_receive: u64) -> Result<()> {
     let bonding_curve = &mut ctx.accounts.bonding_curve;
 
     bonding_curve.buy(
@@ -21,14 +21,14 @@ pub fn buy(ctx: Context<Trade>, amount: u64, max_sol_cost: u64) -> Result<()> {
         ctx.bumps.bonding_curve,
         &ctx.accounts.token_program,
         &ctx.accounts.system_program,
-        amount,
-        max_sol_cost,
+        sol_amount,
+        min_token_receive,
     )?;
 
     Ok(())
 }
 
-pub fn sell(ctx: Context<Trade>, amount: u64, min_sol_cost: u64) -> Result<()> {
+pub fn sell(ctx: Context<Trade>, token_amount: u64, min_sol_receive: u64) -> Result<()> {
     let bonding_curve = &mut ctx.accounts.bonding_curve;
 
     bonding_curve.sell(
@@ -39,8 +39,8 @@ pub fn sell(ctx: Context<Trade>, amount: u64, min_sol_cost: u64) -> Result<()> {
         &mut ctx.accounts.vault,
         &ctx.accounts.token_program,
         &ctx.accounts.system_program,
-        amount,
-        min_sol_cost,
+        token_amount,
+        min_sol_receive,
     )?;
 
     Ok(())

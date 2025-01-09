@@ -1,9 +1,11 @@
+use crate::state::GlobalConfig;
+use crate::tokenomics::{calculate_sol_amount, calculate_token_amount};
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::log::sol_log_64;
 use anchor_lang::system_program;
 use anchor_spl::token::{transfer, Mint, Token, TokenAccount, Transfer};
-
-use crate::state::GlobalConfig;
-use crate::tokenomics::{calculate_sol_amount_for_buy, calculate_sol_amount_for_sell};
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 #[account]
 #[derive(InitSpace)]
@@ -70,15 +72,37 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
         bonding_curve_bump: u8,
         token_program: &Program<'info, Token>,
         system_program: &Program<'info, System>,
-        amount: u64,
-        max_sol_cost: u64,
+        sol_amount: u64,
+        min_token_receive: u64,
     ) -> Result<()> {
+        require!(self.reserve_token > 0, ErrorCode::BondingCurveIsComplete);
+        require!(sol_amount > 0, ErrorCode::ZeroSolAmount);
+
         let circulating_supply = self.token_threshold - self.reserve_token;
-        let sol_amount = calculate_sol_amount_for_buy(amount, circulating_supply, self.curve_a);
 
-        require!(sol_amount <= max_sol_cost, ErrorCode::MoreThanMaxSolCost);
+        let mut token_amount = calculate_token_amount(circulating_supply, self.curve_a, sol_amount);
+        let mut correct_sol_amount = sol_amount;
+        let mut correct_min_token_receive = min_token_receive;
 
-        let fee_amount = sol_amount / global_config.fee_basis_points as u64;
+        msg!("Calculated token amount: {}", token_amount);
+
+        if token_amount > self.reserve_token {
+            token_amount = self.reserve_token;
+            correct_sol_amount =
+                calculate_sol_amount(self.token_threshold, self.curve_a, token_amount);
+            correct_min_token_receive = (BigInt::from(correct_sol_amount)
+                * BigInt::from(min_token_receive)
+                / BigInt::from(sol_amount))
+            .to_u64()
+            .unwrap();
+        }
+
+        require!(
+            token_amount >= correct_min_token_receive,
+            ErrorCode::LessThanMinTokenReceive
+        );
+
+        let fee_amount = correct_sol_amount / global_config.fee_basis_points as u64;
 
         system_program::transfer(
             CpiContext::new(
@@ -88,7 +112,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
                     to: self.to_account_info(),
                 },
             ),
-            sol_amount,
+            correct_sol_amount,
         )?;
 
         transfer(
@@ -105,7 +129,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
                     &[bonding_curve_bump],
                 ]],
             ),
-            amount,
+            token_amount,
         )?;
 
         system_program::transfer(
@@ -119,8 +143,8 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
             fee_amount,
         )?;
 
-        self.reserve_token -= amount;
-        self.reserve_sol += sol_amount;
+        self.reserve_token -= token_amount;
+        self.reserve_sol += correct_sol_amount;
 
         Ok(())
     }
@@ -134,13 +158,18 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
         vault: &mut Account<'info, TokenAccount>,
         token_program: &Program<'info, Token>,
         system_program: &Program<'info, System>,
-        amount: u64,
-        min_sol_cost: u64,
+        token_amount: u64,
+        min_sol_receive: u64,
     ) -> Result<()> {
-        let circulating_supply = self.token_threshold - self.reserve_token;
-        let sol_amount = calculate_sol_amount_for_sell(amount, circulating_supply, self.curve_a);
+        require!(self.reserve_token > 0, ErrorCode::BondingCurveIsComplete);
 
-        require!(sol_amount >= min_sol_cost, ErrorCode::LessThanMinSolCost);
+        let circulating_supply = self.token_threshold - self.reserve_token;
+        let sol_amount = calculate_sol_amount(circulating_supply, self.curve_a, token_amount);
+
+        require!(
+            sol_amount >= min_sol_receive,
+            ErrorCode::LessThanMinSolReceive
+        );
 
         let fee_amount = sol_amount / global_config.fee_basis_points as u64;
 
@@ -153,7 +182,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
                     authority: user.to_account_info(),
                 },
             ),
-            amount,
+            token_amount,
         )?;
 
         system_program::transfer(
@@ -170,7 +199,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
         **self.to_account_info().try_borrow_mut_lamports()? -= sol_amount;
         **user.try_borrow_mut_lamports()? += sol_amount;
 
-        self.reserve_token += amount;
+        self.reserve_token += token_amount;
         self.reserve_sol -= sol_amount;
 
         Ok(())
@@ -185,8 +214,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
         bonding_curve_bump: u8,
         token_program: &Program<'info, Token>,
     ) -> Result<()> {
-
-        require!( self.reserve_token == 0, ErrorCode::BondingCurveNotComplete);
+        require!(self.reserve_token == 0, ErrorCode::BondingCurveNotComplete);
 
         transfer(
             CpiContext::new_with_signer(
@@ -217,10 +245,14 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
 
 #[error_code]
 enum ErrorCode {
-    #[msg("Calculated sol cost is more than max sol cost")]
-    MoreThanMaxSolCost,
-    #[msg("Calculated sol cost is less than min sol cost")]
-    LessThanMinSolCost,
-    #[msg("Withdraw not allowed before threshold reached")]
+    #[msg("Zero sol amount is not allowed for trade")]
+    ZeroSolAmount,
+    #[msg("Calculated token amount is less than min token receive")]
+    LessThanMinTokenReceive,
+    #[msg("Calculated sol amount is less than min sol receive")]
+    LessThanMinSolReceive,
+    #[msg("Trade is not allowed after bonding curve is complete")]
+    BondingCurveIsComplete,
+    #[msg("Withdraw not allowed before bonding curve is complete")]
     BondingCurveNotComplete,
 }
