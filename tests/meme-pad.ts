@@ -166,6 +166,23 @@ describe('meme-pad', () => {
       })
     })
 
+    describe('Buy after threshold reached', () => {
+      it('fails to buy after threshold reached', async () => {
+        await buy(solThreshold * 2n, tokenThreshold)
+        try {
+          const buyAmount = 2n * BigInt(LAMPORTS_PER_SOL)
+          const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, buyAmount)
+          await buy(buyAmount, calculatedTokenAmount)
+          assert.fail('The program did not panic')
+        } catch (err) {
+          assert(err instanceof anchor.AnchorError, 'Unexpected error type')
+          const anchorErr = err as anchor.AnchorError
+          expect(anchorErr.error.errorCode.code).to.eq('BondingCurveIsComplete')
+          expect(anchorErr.error.errorMessage).to.eq('Trade is not allowed after bonding curve is complete')
+        }
+      })
+    })
+
     describe('Last Buy', () => {
       it('buys remaining tokens with correct min receive', async () => {
         const remainingSols = 5n * BigInt(LAMPORTS_PER_SOL)
@@ -195,7 +212,7 @@ describe('meme-pad', () => {
         expect(finalVaultBalance).to.eq(initialVaultBalance - remainingTokens)
       })
 
-      it.only('fails to buy remaining tokens with incorrect min receive', async () => {
+      it('fails to buy remaining tokens with incorrect min receive', async () => {
         const remainingSols = 5n * BigInt(LAMPORTS_PER_SOL)
         const solAmount = solThreshold - remainingSols
         const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, solAmount)
@@ -261,6 +278,19 @@ describe('meme-pad', () => {
           expect(anchorErr.error.errorMessage).to.eq('Calculated sol amount is less than min sol receive')
         }
       })
+
+      it('fails to sell after threshold reached', async () => {
+        await buy(solThreshold * 2n, calculatedTokenAmount)
+        try {
+          await sell(buyAmount, calculatedTokenAmount)
+          assert.fail('The program did not panic')
+        } catch (err) {
+          assert(err instanceof anchor.AnchorError, 'Unexpected error type')
+          const anchorErr = err as anchor.AnchorError
+          expect(anchorErr.error.errorCode.code).to.eq('BondingCurveIsComplete')
+          expect(anchorErr.error.errorMessage).to.eq('Trade is not allowed after bonding curve is complete')
+        }
+      })
     })
   })
 
@@ -291,6 +321,23 @@ describe('meme-pad', () => {
         const anchorErr = err as anchor.AnchorError
         expect(anchorErr.error.errorCode.code).to.eq('BondingCurveNotComplete')
         expect(anchorErr.error.errorMessage).to.eq('Withdraw not allowed before bonding curve is complete')
+      }
+    })
+
+    it('fails to withdraw more than once', async () => {
+      await createAssociatedTokenAccountIdempotent(provider.connection, user.payer, mintKeypair.publicKey, user.publicKey)
+      await buy(solThreshold * 2n, tokenThreshold)
+
+      await expectWithdraw()
+
+      try {
+        await withdraw()
+        assert.fail('The program did not panic')
+      } catch (err) {
+        assert(err instanceof anchor.AnchorError, 'Unexpected error type')
+        const anchorErr = err as anchor.AnchorError
+        expect(anchorErr.error.errorCode.code).to.eq('AlreadyWithdrawn')
+        expect(anchorErr.error.errorMessage).to.eq('Already withdrawn')
       }
     })
   })

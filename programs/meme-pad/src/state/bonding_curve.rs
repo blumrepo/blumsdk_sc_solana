@@ -215,6 +215,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
         token_program: &Program<'info, Token>,
     ) -> Result<()> {
         require!(self.reserve_token == 0, ErrorCode::BondingCurveNotComplete);
+        require!(self.reserve_sol != 0 || vault.amount != 0, ErrorCode::AlreadyWithdrawn);
 
         transfer(
             CpiContext::new_with_signer(
@@ -255,4 +256,6 @@ enum ErrorCode {
     BondingCurveIsComplete,
     #[msg("Withdraw not allowed before bonding curve is complete")]
     BondingCurveNotComplete,
+    #[msg("Already withdrawn")]
+    AlreadyWithdrawn,
 }
