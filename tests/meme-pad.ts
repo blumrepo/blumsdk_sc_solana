@@ -165,6 +165,55 @@ describe('meme-pad', () => {
         }
       })
     })
+
+    describe('Last Buy', () => {
+      it('buys remaining tokens with correct min receive', async () => {
+        const remainingSols = 5n * BigInt(LAMPORTS_PER_SOL)
+        const solAmount = solThreshold - remainingSols
+        const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, solAmount)
+        await buy(solAmount, calculatedTokenAmount)
+
+        const initialUserBalance = await getBalance(user.publicKey)
+        const initialBondingCurveBalance = await getBalance(getBondingCurveAddress())
+        const initialUserTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey))
+        const initialVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
+        const remainingTokens = tokenThreshold - calculatedTokenAmount
+
+        const tx = await buy(remainingSols * 2n + 2n, remainingTokens * 2n)
+
+        const finalUserBalance = await getBalance(user.publicKey)
+        const finalBondingCurveBalance = await getBalance(getBondingCurveAddress())
+        const finalUserTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey))
+        const finalVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
+
+        const feeAmount = remainingSols / BigInt(feeBasisPoints)
+        const expectedFinalBalance = initialUserBalance - remainingSols - feeAmount - BigInt(tx.meta.fee.toString())
+
+        expect(finalUserBalance).to.be.closeToBigInt(expectedFinalBalance, 50n)
+        expect(finalBondingCurveBalance).to.closeToBigInt(initialBondingCurveBalance + remainingSols, 1n)
+        expect(finalUserTokenBalance).to.eq(initialUserTokenBalance + remainingTokens)
+        expect(finalVaultBalance).to.eq(initialVaultBalance - remainingTokens)
+      })
+
+      it.only('fails to buy remaining tokens with incorrect min receive', async () => {
+        const remainingSols = 5n * BigInt(LAMPORTS_PER_SOL)
+        const solAmount = solThreshold - remainingSols
+        const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, solAmount)
+        await buy(solAmount, calculatedTokenAmount)
+
+        const remainingTokens = tokenThreshold - calculatedTokenAmount
+
+        try {
+          await buy(remainingSols * 2n + 2n, remainingTokens * 2n + 100n)
+          assert.fail('The program did not panic')
+        } catch (err) {
+          assert(err instanceof anchor.AnchorError, 'Unexpected error type')
+          const anchorErr = err as anchor.AnchorError
+          expect(anchorErr.error.errorCode.code).to.eq('LessThanMinTokenReceive')
+          expect(anchorErr.error.errorMessage).to.eq('Calculated token amount is less than min token receive')
+        }
+      })
+    })
   })
 
   describe('Sell', () => {
@@ -348,9 +397,9 @@ describe('meme-pad', () => {
     expect(fromBN(finalBondingCurve.reserveSol)).to.eq(0n)
   }
 
-  async function buy(amount: bigint, maxSolCost: bigint) {
+  async function buy(solAmount: bigint, minTokenReceive: bigint) {
     const txSignature = await program.methods
-      .buy(toBN(amount), toBN(maxSolCost))
+      .buy(toBN(solAmount), toBN(minTokenReceive))
       .accounts({
         mintAccount: mintKeypair.publicKey,
       })
@@ -363,9 +412,9 @@ describe('meme-pad', () => {
     return await provider.connection.getParsedTransaction(txSignature, 'confirmed')
   }
 
-  async function sell(amount: bigint, minSolCost: bigint) {
+  async function sell(tokenAmount: bigint, minSolReceive: bigint) {
     const txSignature = await program.methods
-      .sell(toBN(amount), toBN(minSolCost))
+      .sell(toBN(tokenAmount), toBN(minSolReceive))
       .accounts({
         mintAccount: mintKeypair.publicKey,
       })
