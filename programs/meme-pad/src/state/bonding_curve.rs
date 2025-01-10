@@ -32,8 +32,8 @@ pub trait BondingCurveAccount<'info> {
         bonding_curve_bump: u8,
         token_program: &Program<'info, Token>,
         system_program: &Program<'info, System>,
-        amount: u64,
-        max_sol_cost: u64,
+        sol_amount: u64,
+        min_token_receive: u64,
     ) -> Result<()>;
 
     fn sell(
@@ -45,8 +45,8 @@ pub trait BondingCurveAccount<'info> {
         vault: &mut Account<'info, TokenAccount>,
         token_program: &Program<'info, Token>,
         system_program: &Program<'info, System>,
-        amount: u64,
-        min_sol_cost: u64,
+        token_amount: u64,
+        min_sol_receive: u64,
     ) -> Result<()>;
 
     fn withdraw(
