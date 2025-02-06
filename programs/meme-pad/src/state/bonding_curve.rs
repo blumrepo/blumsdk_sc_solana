@@ -102,7 +102,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
             ErrorCode::LessThanMinTokenReceive
         );
 
-        let fee_amount = correct_sol_amount / global_config.fee_basis_points as u64;
+        let fee_amount = correct_sol_amount * global_config.fee_basis_points as u64 / 10_000u64;
 
         system_program::transfer(
             CpiContext::new(
@@ -171,7 +171,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
             ErrorCode::LessThanMinSolReceive
         );
 
-        let fee_amount = sol_amount / global_config.fee_basis_points as u64;
+        let fee_amount = sol_amount * global_config.fee_basis_points as u64 / 10_000u64;
 
         transfer(
             CpiContext::new(

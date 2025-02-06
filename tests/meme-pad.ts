@@ -31,7 +31,7 @@ describe('meme-pad', () => {
   const authorityKeypair = new Keypair()
   const feeRecipientKeypair = new Keypair()
   const migrationKeypair = user.payer
-  const feeBasisPoints = 100
+  const feeBasisPoints = 90
   const tokenSupply = toTokenValue(1_000_000_000n)
   const tokenThreshold = 793_099_999_845_341n
   const curveA = 2_720_310_556n
@@ -203,7 +203,7 @@ describe('meme-pad', () => {
         const finalUserTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey))
         const finalVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
 
-        const feeAmount = remainingSols / BigInt(feeBasisPoints)
+        const feeAmount = remainingSols * BigInt(feeBasisPoints) / 10_000n
         const expectedFinalBalance = initialUserBalance - remainingSols - feeAmount - BigInt(tx.meta.fee.toString())
 
         expect(finalUserBalance).to.be.closeToBigInt(expectedFinalBalance, 50n)
@@ -359,7 +359,7 @@ describe('meme-pad', () => {
   async function expectBuy(solAmount: bigint) {
     const circulatingSupply = await getCirculatingSupply()
     const calculatedTokenAmount = tokenomics.calculateTokenAmount(circulatingSupply, solAmount)
-    const feeAmount = solAmount / BigInt(feeBasisPoints)
+    const feeAmount = solAmount * BigInt(feeBasisPoints) / 10_000n
 
     const initialUserBalance = await getBalance(user.publicKey)
     const initialBondingCurveBalance = await getBalance(getBondingCurveAddress())
@@ -389,7 +389,7 @@ describe('meme-pad', () => {
   async function expectSell(tokenAmount: bigint) {
     const circulatingSupply = await getCirculatingSupply()
     const calculatedSolAmount = tokenomics.calculateSolAmount(circulatingSupply, tokenAmount)
-    const feeAmount = calculatedSolAmount / BigInt(feeBasisPoints)
+    const feeAmount = calculatedSolAmount * BigInt(feeBasisPoints) / 10_000n
 
     const initialUserBalance = await getBalance(user.publicKey)
     const initialBondingCurveBalance = await getBalance(getBondingCurveAddress())
