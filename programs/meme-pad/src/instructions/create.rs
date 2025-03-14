@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_lang::system_program;
 use anchor_spl::{
     associated_token::AssociatedToken,
     metadata::{
@@ -89,6 +90,19 @@ pub fn create(ctx: Context<Create>, name: String, symbol: String, uri: String) -
         None,
     )?;
 
+    // Transfer deploy fee
+
+    system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            system_program::Transfer {
+                from: ctx.accounts.user.to_account_info(),
+                to: ctx.accounts.fee_recipient.to_account_info(),
+            },
+        ),
+        ctx.accounts.global_config.deploy_fee,
+    )?;
+
     Ok(())
 }
 
@@ -98,10 +112,15 @@ pub struct Create<'info> {
     pub user: Signer<'info>,
 
     #[account(
+        has_one = fee_recipient,
         seeds = [GlobalConfig::SEED_PREFIX.as_bytes()],
         bump,
     )]
     pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    /// CHECK: checked in global config
+    #[account(mut)]
+    pub fee_recipient: AccountInfo<'info>,
 
     #[account(
         seeds = [MintAuthorityPda::SEED_PREFIX.as_bytes()],

@@ -1,7 +1,7 @@
 import * as anchor from '@coral-xyz/anchor'
 import { BN, Program } from '@coral-xyz/anchor'
 import { MemePad } from '../target/types/meme_pad'
-import { Keypair, type PublicKey } from '@solana/web3.js'
+import { Keypair, LAMPORTS_PER_SOL, type PublicKey } from '@solana/web3.js'
 import { createAssociatedTokenAccountIdempotent, getAssociatedTokenAddressSync, getMint } from '@solana/spl-token'
 import { publicKey } from '@metaplex-foundation/umi'
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults'
@@ -31,7 +31,11 @@ describe('meme-pad', () => {
   const authorityKeypair = new Keypair()
   const feeRecipientKeypair = new Keypair()
   const migrationKeypair = user.payer
-  const feeBasisPoints = 80
+
+  const deployFee = BigInt(0.5 * LAMPORTS_PER_SOL)
+  const buyFeeBps = 130
+  const sellFeeBps = 80
+
   const tokenSupply = toTokenValue(1_000_000_000n)
 
   const tokenThreshold = 793_099_999_845_341n
@@ -48,7 +52,9 @@ describe('meme-pad', () => {
         authorityKeypair.publicKey,
         feeRecipientKeypair.publicKey,
         migrationKeypair.publicKey,
-        feeBasisPoints,
+        toBN(deployFee),
+        buyFeeBps,
+        sellFeeBps,
         toBN(tokenSupply),
         toBN(tokenThreshold),
         toBN(curveA)
@@ -65,10 +71,12 @@ describe('meme-pad', () => {
       expect(globalConfig.authority.toString()).to.eq(authorityKeypair.publicKey.toString())
       expect(globalConfig.feeRecipient.toString()).to.eq(feeRecipientKeypair.publicKey.toString())
       expect(globalConfig.migrationAccount.toString()).to.eq(migrationKeypair.publicKey.toString())
-      expect(globalConfig.feeBasisPoints).to.eq(feeBasisPoints)
-      expect(globalConfig.tokenSupply.toString()).to.eq(tokenSupply.toString())
-      expect(globalConfig.tokenThreshold.toString()).to.eq(tokenThreshold.toString())
-      expect(globalConfig.curveA.toString()).to.eq(curveA.toString())
+      expect(fromBN(globalConfig.deployFee)).to.eq(deployFee)
+      expect(globalConfig.buyFeeBps).to.eq(buyFeeBps)
+      expect(globalConfig.sellFeeBps).to.eq(sellFeeBps)
+      expect(fromBN(globalConfig.tokenSupply)).to.eq(tokenSupply)
+      expect(fromBN(globalConfig.tokenThreshold)).to.eq(tokenThreshold)
+      expect(fromBN(globalConfig.curveA)).to.eq(curveA)
     })
 
     it('creates mint authority account', async () => {
@@ -80,26 +88,25 @@ describe('meme-pad', () => {
     })
   })
 
-  describe('Create Mint', () => {
+  describe.only('Create Mint', () => {
     beforeEach(async () => {
       mintKeypair = new Keypair()
-      await createMint()
     })
 
     it('creates correct mint', async () => {
+      await createMint()
+
       let mint = await getMint(provider.connection, mintKeypair.publicKey)
 
-      expect(mint.mintAuthority).to.be.null
-      expect(mint.supply.toString()).to.eq(tokenSupply.toString())
-      expect(mint.decimals).to.eq(tokenDecimal)
-    })
-
-    it('creates mint metadata', async () => {
       const umi = createUmi(provider.connection)
       umi.use(walletAdapterIdentity(provider.wallet))
 
       const metadataPda = findMetadataPda(umi, { mint: publicKey(mintKeypair.publicKey) })
       const fetchedMetadata = await safeFetchMetadata(umi, metadataPda)
+
+      expect(mint.mintAuthority).to.be.null
+      expect(mint.supply.toString()).to.eq(tokenSupply.toString())
+      expect(mint.decimals).to.eq(tokenDecimal)
 
       expect(fetchedMetadata.name).to.eq(metadata.name)
       expect(fetchedMetadata.symbol).to.eq(metadata.symbol)
@@ -107,6 +114,8 @@ describe('meme-pad', () => {
     })
 
     it('mints all tokens to vault', async () => {
+      await createMint()
+
       const vaultAddress = getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
       const balance = await provider.connection.getTokenAccountBalance(vaultAddress)
 
@@ -114,12 +123,22 @@ describe('meme-pad', () => {
     })
 
     it('creates bonding curve', async () => {
+      await createMint()
+
       let bondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
       expect(bondingCurve.reserveSol.toString()).to.eq(0n.toString())
       expect(bondingCurve.reserveToken.toString()).to.eq(tokenThreshold.toString())
       expect(bondingCurve.tokenThreshold.toString()).to.eq(tokenThreshold.toString())
       expect(bondingCurve.curveA.toString()).to.eq(curveA.toString())
+    })
+
+    it('creates bonding curve', async () => {
+      const initialFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
+      await createMint()
+      const finalFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
+
+      expect(finalFeeRecipientBalance).to.eq(initialFeeRecipientBalance + Number(deployFee))
     })
   })
 
@@ -320,7 +339,7 @@ describe('meme-pad', () => {
   }
 
   async function expectBuy(solAmount: bigint, minTokenAmount: bigint, expectedSolAmount: bigint, expectedTokenAmount: bigint) {
-    const feeAmount = Number((expectedSolAmount * BigInt(feeBasisPoints)) / 10_000n)
+    const feeAmount = Number((expectedSolAmount * BigInt(buyFeeBps)) / 10_000n)
 
     const initialUserBalance = await provider.connection.getBalance(user.publicKey)
     const initialBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())
@@ -363,7 +382,7 @@ describe('meme-pad', () => {
   async function expectSell(tokenAmount: bigint) {
     const circulatingSupply = await getCirculatingSupply()
     const solAmount = tokenomics.calculateSolAmountForSell(circulatingSupply, tokenAmount)
-    const feeAmount = Number((solAmount * BigInt(feeBasisPoints)) / 10_000n)
+    const feeAmount = Number((solAmount * BigInt(sellFeeBps)) / 10_000n)
 
     const initialUserBalance = await provider.connection.getBalance(user.publicKey)
     const initialBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())

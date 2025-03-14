@@ -94,7 +94,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
             ErrorCode::LessThanMinTokenAmount
         );
 
-        let fee_amount = sol_amount * global_config.fee_basis_points as u64 / 10_000u64;
+        let fee_amount = sol_amount * global_config.buy_fee_bps as u64 / 10_000u64;
 
         system_program::transfer(
             CpiContext::new(
@@ -168,7 +168,7 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
             ErrorCode::LessThanMinSolAmount
         );
 
-        let fee_amount = sol_amount * global_config.fee_basis_points as u64 / 10_000u64;
+        let fee_amount = sol_amount * global_config.sell_fee_bps as u64 / 10_000u64;
 
         transfer(
             CpiContext::new(
