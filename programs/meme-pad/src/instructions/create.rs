@@ -15,8 +15,10 @@ use crate::consts::{DECIMALS, DISCRIMINATOR};
 use crate::state::{BondingCurve, GlobalConfig, MintAuthorityPda};
 
 pub fn create(ctx: Context<Create>, name: String, symbol: String, uri: String) -> Result<()> {
-    let mint_authority_signer_seeds: &[&[&[u8]]] =
-        &[&[MintAuthorityPda::SEED_PREFIX.as_bytes(), &[ctx.bumps.mint_authority]]];
+    let mint_authority_signer_seeds: &[&[&[u8]]] = &[&[
+        MintAuthorityPda::SEED_PREFIX.as_bytes(),
+        &[ctx.bumps.mint_authority],
+    ]];
 
     // Create token metadata
 
@@ -54,7 +56,7 @@ pub fn create(ctx: Context<Create>, name: String, symbol: String, uri: String) -
         reserve_sol: 0,
         reserve_token: ctx.accounts.global_config.token_threshold,
         token_threshold: ctx.accounts.global_config.token_threshold,
-        curve_a: ctx.accounts.global_config.curve_a
+        curve_a: ctx.accounts.global_config.curve_a,
     };
 
     // Mint tokens to vault

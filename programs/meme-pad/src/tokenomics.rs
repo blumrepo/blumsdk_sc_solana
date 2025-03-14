@@ -3,13 +3,13 @@ use num_traits::{One, ToPrimitive, Zero};
 
 const PRECISION: u32 = 9;
 
-pub fn calculate_token_amount(circulating_supply: u64, curve_a: u64, sol_amount: u64) -> u64 {
+pub fn calculate_token_amount(sol_amount: u64, circulating_supply: u64, curve_a: u64) -> u64 {
     let sol_reserve = f_reverse(circulating_supply, curve_a).to_u64().unwrap();
     let token_amount_bigint = f(sol_reserve + sol_amount, curve_a) - f(sol_reserve, curve_a);
     token_amount_bigint.to_u64().unwrap()
 }
 
-pub fn calculate_sol_amount(circulating_supply: u64, curve_a: u64, token_amount: u64) -> u64 {
+pub fn calculate_sol_amount(token_amount: u64, circulating_supply: u64, curve_a: u64) -> u64 {
     let sol_amount_bigint = f_reverse(circulating_supply, curve_a)
         - f_reverse(circulating_supply - token_amount, curve_a);
     sol_amount_bigint.to_u64().unwrap()

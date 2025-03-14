@@ -1,7 +1,7 @@
 import * as anchor from '@coral-xyz/anchor'
 import { BN, Program } from '@coral-xyz/anchor'
 import { MemePad } from '../target/types/meme_pad'
-import { Keypair, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js'
+import { Keypair, type PublicKey } from '@solana/web3.js'
 import { createAssociatedTokenAccountIdempotent, getAssociatedTokenAddressSync, getMint } from '@solana/spl-token'
 import { publicKey } from '@metaplex-foundation/umi'
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults'
@@ -31,13 +31,16 @@ describe('meme-pad', () => {
   const authorityKeypair = new Keypair()
   const feeRecipientKeypair = new Keypair()
   const migrationKeypair = user.payer
-  const feeBasisPoints = 90
+  const feeBasisPoints = 80
   const tokenSupply = toTokenValue(1_000_000_000n)
+
   const tokenThreshold = 793_099_999_845_341n
   const curveA = 2_720_310_556n
-  const solThreshold = 85_000_000_062n
+  // const tokenThreshold = 800_000_000_000_000n
+  // const curveA = 100_000_000_000n
 
   const tokenomics = new Tokenomics(curveA)
+  const curveSol = tokenomics.calculateSolAmountForBuy(tokenThreshold, tokenThreshold)
 
   before(async () => {
     await program.methods
@@ -50,14 +53,14 @@ describe('meme-pad', () => {
         toBN(tokenThreshold),
         toBN(curveA)
       )
-      .rpc()
+      .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
   })
 
   describe('Initialize Meme Pad', () => {
     it('creates global config and fills with provided data', async () => {
       const [globalConfigAddress] = anchor.web3.PublicKey.findProgramAddressSync([Buffer.from('global_config')], program.programId)
 
-      let globalConfig = await program.account.globalConfig.fetch(globalConfigAddress)
+      let globalConfig = await program.account.globalConfig.fetch(globalConfigAddress, 'confirmed')
 
       expect(globalConfig.authority.toString()).to.eq(authorityKeypair.publicKey.toString())
       expect(globalConfig.feeRecipient.toString()).to.eq(feeRecipientKeypair.publicKey.toString())
@@ -80,48 +83,43 @@ describe('meme-pad', () => {
   describe('Create Mint', () => {
     beforeEach(async () => {
       mintKeypair = new Keypair()
+      await createMint()
     })
 
-    describe('Creation', () => {
-      beforeEach(async () => {
-        await createMint()
-      })
+    it('creates correct mint', async () => {
+      let mint = await getMint(provider.connection, mintKeypair.publicKey)
 
-      it('creates correct mint', async () => {
-        let mint = await getMint(provider.connection, mintKeypair.publicKey)
+      expect(mint.mintAuthority).to.be.null
+      expect(mint.supply.toString()).to.eq(tokenSupply.toString())
+      expect(mint.decimals).to.eq(tokenDecimal)
+    })
 
-        expect(mint.mintAuthority).to.be.null
-        expect(mint.supply.toString()).to.eq(tokenSupply.toString())
-        expect(mint.decimals).to.eq(tokenDecimal)
-      })
+    it('creates mint metadata', async () => {
+      const umi = createUmi(provider.connection)
+      umi.use(walletAdapterIdentity(provider.wallet))
 
-      it('creates mint metadata', async () => {
-        const umi = createUmi(provider.connection)
-        umi.use(walletAdapterIdentity(provider.wallet))
+      const metadataPda = findMetadataPda(umi, { mint: publicKey(mintKeypair.publicKey) })
+      const fetchedMetadata = await safeFetchMetadata(umi, metadataPda)
 
-        const metadataPda = findMetadataPda(umi, { mint: publicKey(mintKeypair.publicKey) })
-        const fetchedMetadata = await safeFetchMetadata(umi, metadataPda)
+      expect(fetchedMetadata.name).to.eq(metadata.name)
+      expect(fetchedMetadata.symbol).to.eq(metadata.symbol)
+      expect(fetchedMetadata.uri).to.eq(metadata.uri)
+    })
 
-        expect(fetchedMetadata.name).to.eq(metadata.name)
-        expect(fetchedMetadata.symbol).to.eq(metadata.symbol)
-        expect(fetchedMetadata.uri).to.eq(metadata.uri)
-      })
+    it('mints all tokens to vault', async () => {
+      const vaultAddress = getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
+      const balance = await provider.connection.getTokenAccountBalance(vaultAddress)
 
-      it('mints all tokens to vault', async () => {
-        const vaultAddress = getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
-        const balance = await provider.connection.getTokenAccountBalance(vaultAddress)
+      expect(balance.value.amount).to.eq(tokenSupply.toString())
+    })
 
-        expect(balance.value.amount).to.eq(tokenSupply.toString())
-      })
+    it('creates bonding curve', async () => {
+      let bondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
-      it('creates bonding curve', async () => {
-        let bondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress())
-
-        expect(bondingCurve.reserveSol.toString()).to.eq(0n.toString())
-        expect(bondingCurve.reserveToken.toString()).to.eq(tokenThreshold.toString())
-        expect(bondingCurve.tokenThreshold.toString()).to.eq(tokenThreshold.toString())
-        expect(bondingCurve.curveA.toString()).to.eq(curveA.toString())
-      })
+      expect(bondingCurve.reserveSol.toString()).to.eq(0n.toString())
+      expect(bondingCurve.reserveToken.toString()).to.eq(tokenThreshold.toString())
+      expect(bondingCurve.tokenThreshold.toString()).to.eq(tokenThreshold.toString())
+      expect(bondingCurve.curveA.toString()).to.eq(curveA.toString())
     })
   })
 
@@ -130,167 +128,131 @@ describe('meme-pad', () => {
       mintKeypair = new Keypair()
 
       await createMint()
-      await createAssociatedTokenAccountIdempotent(provider.connection, user.payer, mintKeypair.publicKey, user.publicKey)
+      await createTokenAccount(mintKeypair.publicKey, user.publicKey)
     })
 
-    describe('Initial Buy', () => {
-      it('transfers funds', async () => {
-        await expectBuy(5n * BigInt(LAMPORTS_PER_SOL))
-      })
+    it('buys tokens correctly', async () => {
+      const solAmount = BigInt(curveSol) / 10n
+      const tokenAmount = tokenomics.calculateTokenAmount(0n, tokenThreshold, solAmount)
 
-      it('updates bonding curve reserves', async () => {
-        const solAmount = 10n * BigInt(LAMPORTS_PER_SOL)
-        const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, solAmount)
-
-        await buy(solAmount, calculatedTokenAmount)
-
-        let bondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress())
-
-        expect(fromBN(bondingCurve.reserveSol)).to.eq(solAmount)
-        expect(fromBN(bondingCurve.reserveToken)).to.eq(tokenThreshold - calculatedTokenAmount)
-      })
-
-      it('fails if token amount is less than min token receive', async () => {
-        const solAmount = 20n * BigInt(LAMPORTS_PER_SOL)
-        const invalidMinTokenReceive = tokenomics.calculateTokenAmount(0n, solAmount) + 1n
-
-        try {
-          await buy(solAmount, invalidMinTokenReceive)
-          assert.fail('The program did not panic')
-        } catch (err) {
-          assert(err instanceof anchor.AnchorError, 'Unexpected error type')
-          const anchorErr = err as anchor.AnchorError
-          expect(anchorErr.error.errorCode.code).to.eq('LessThanMinTokenReceive')
-          expect(anchorErr.error.errorMessage).to.eq('Calculated token amount is less than min token receive')
-        }
-      })
+      await expectBuy(solAmount, tokenAmount, solAmount, tokenAmount)
     })
 
-    describe('Buy after threshold reached', () => {
-      it('fails to buy after threshold reached', async () => {
-        await buy(solThreshold * 2n, tokenThreshold)
-        try {
-          const buyAmount = 2n * BigInt(LAMPORTS_PER_SOL)
-          const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, buyAmount)
-          await buy(buyAmount, calculatedTokenAmount)
-          assert.fail('The program did not panic')
-        } catch (err) {
-          assert(err instanceof anchor.AnchorError, 'Unexpected error type')
-          const anchorErr = err as anchor.AnchorError
-          expect(anchorErr.error.errorCode.code).to.eq('BondingCurveIsComplete')
-          expect(anchorErr.error.errorMessage).to.eq('Trade is not allowed after bonding curve is complete')
-        }
-      })
+    it('buys tokens left when reaching threshold', async () => {
+      await buy(BigInt(curveSol) / 2n, 0n)
+
+      const solAmount = BigInt(curveSol)
+      const circulatingSupply = await getCirculatingSupply()
+      const tokenAmount = tokenomics.calculateTokenAmount(circulatingSupply, tokenThreshold, solAmount)
+      const expectedSolAmount = tokenomics.calculateSolAmountForBuy(circulatingSupply + tokenAmount, tokenAmount)
+
+      await expectBuy(solAmount, tokenAmount, expectedSolAmount, tokenAmount)
     })
 
-    describe('Last Buy', () => {
-      it('buys remaining tokens with correct min receive', async () => {
-        const remainingSols = 5n * BigInt(LAMPORTS_PER_SOL)
-        const solAmount = solThreshold - remainingSols
-        const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, solAmount)
-        await buy(solAmount, calculatedTokenAmount)
+    it('buys tokens left when reaching threshold if his tx is overrun', async () => {
+      await buy(BigInt(curveSol) / 2n, 0n)
 
-        const initialUserBalance = await getBalance(user.publicKey)
-        const initialBondingCurveBalance = await getBalance(getBondingCurveAddress())
-        const initialUserTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey))
-        const initialVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
-        const remainingTokens = tokenThreshold - calculatedTokenAmount
+      const solAmount = BigInt(curveSol)
+      const minTokenAmount = tokenomics.calculateTokenAmount(await getCirculatingSupply(), tokenThreshold, solAmount)
 
-        const tx = await buy(remainingSols * 2n + 2n, remainingTokens * 2n)
+      await buy(BigInt(curveSol) / 4n, 0n)
 
-        const finalUserBalance = await getBalance(user.publicKey)
-        const finalBondingCurveBalance = await getBalance(getBondingCurveAddress())
-        const finalUserTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey))
-        const finalVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
+      const circulatingSupply = await getCirculatingSupply()
+      const tokenAmount = tokenomics.calculateTokenAmount(circulatingSupply, tokenThreshold, solAmount)
+      const expectedSolAmount = tokenomics.calculateSolAmountForBuy(circulatingSupply + tokenAmount, tokenAmount)
 
-        const feeAmount = remainingSols * BigInt(feeBasisPoints) / 10_000n
-        const expectedFinalBalance = initialUserBalance - remainingSols - feeAmount - BigInt(tx.meta.fee.toString())
+      await expectBuy(solAmount, minTokenAmount, expectedSolAmount, tokenAmount)
+    })
 
-        expect(finalUserBalance).to.be.closeToBigInt(expectedFinalBalance, 50n)
-        expect(finalBondingCurveBalance).to.closeToBigInt(initialBondingCurveBalance + remainingSols, 1n)
-        expect(finalUserTokenBalance).to.eq(initialUserTokenBalance + remainingTokens)
-        expect(finalVaultBalance).to.eq(initialVaultBalance - remainingTokens)
-      })
+    it('fails if token amount is less than min token amount', async () => {
+      const solAmount = BigInt(curveSol) / 2n
+      const invalidMinTokenAmount = tokenomics.calculateTokenAmount(0n, tokenThreshold, solAmount) + 1n
 
-      it('fails to buy remaining tokens with incorrect min receive', async () => {
-        const remainingSols = 5n * BigInt(LAMPORTS_PER_SOL)
-        const solAmount = solThreshold - remainingSols
-        const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, solAmount)
-        await buy(solAmount, calculatedTokenAmount)
+      try {
+        await buy(solAmount, invalidMinTokenAmount)
+        assert.fail('The program did not panic')
+      } catch (err) {
+        assert(err instanceof anchor.AnchorError, 'Unexpected error type')
+        const anchorErr = err as anchor.AnchorError
+        expect(anchorErr.error.errorCode.code).to.eq('LessThanMinTokenAmount')
+        expect(anchorErr.error.errorMessage).to.eq('Calculated token amount is less than min token amount')
+      }
+    })
 
-        const remainingTokens = tokenThreshold - calculatedTokenAmount
+    it('fails if amount is zero', async () => {
+      try {
+        await buy(0n, 0n)
+        assert.fail('The program did not panic')
+      } catch (err) {
+        assert(err instanceof anchor.AnchorError, 'Unexpected error type')
+        const anchorErr = err as anchor.AnchorError
+        expect(anchorErr.error.errorCode.code).to.eq('ZeroAmount')
+        expect(anchorErr.error.errorMessage).to.eq('Trade not allow for zero amount')
+      }
+    })
 
-        try {
-          await buy(remainingSols * 2n + 2n, remainingTokens * 2n + 100n)
-          assert.fail('The program did not panic')
-        } catch (err) {
-          assert(err instanceof anchor.AnchorError, 'Unexpected error type')
-          const anchorErr = err as anchor.AnchorError
-          expect(anchorErr.error.errorCode.code).to.eq('LessThanMinTokenReceive')
-          expect(anchorErr.error.errorMessage).to.eq('Calculated token amount is less than min token receive')
-        }
-      })
+    it('fails if curve is complete', async () => {
+      await buy(curveSol, 0n)
+
+      try {
+        await buy(BigInt(curveSol) / 10n, 0n)
+        assert.fail('The program did not panic')
+      } catch (err) {
+        assert(err instanceof anchor.AnchorError, 'Unexpected error type')
+        const anchorErr = err as anchor.AnchorError
+        expect(anchorErr.error.errorCode.code).to.eq('BondingCurveCompleted')
+        expect(anchorErr.error.errorMessage).to.eq('Trade not allowed after threshold reached')
+      }
     })
   })
 
   describe('Sell', () => {
-    const buyAmount = 50n * BigInt(LAMPORTS_PER_SOL)
-    const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, buyAmount)
+    const buyAmount = BigInt(curveSol) / 5n
+    const buyTokenAmount = tokenomics.calculateTokenAmount(0n, tokenThreshold, buyAmount)
 
     beforeEach(async () => {
       mintKeypair = new Keypair()
 
       await createMint()
-      await createAssociatedTokenAccountIdempotent(provider.connection, user.payer, mintKeypair.publicKey, user.publicKey)
-      await buy(buyAmount, calculatedTokenAmount)
+      await createTokenAccount(mintKeypair.publicKey, user.publicKey)
+      await buy(buyAmount, buyTokenAmount)
     })
 
-    describe('Sell Tokens', () => {
-      it('transfers funds', async () => {
-        await expectSell(toTokenValue(60_000_000n))
-      })
+    it('sells tokens correctly', async () => {
+      await expectSell(buyTokenAmount / 2n)
+    })
 
-      it('updates bonding curve reserves', async () => {
-        const amount = toTokenValue(100_000_000n)
-        const calculatedSolAmount = tokenomics.calculateSolAmount(await getCirculatingSupply(), amount)
+    it('sells 1 token correctly', async () => {
+      await expectSell(1n)
+    })
 
-        let initialBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress())
+    it('fails if sol amount is less than min sol amount', async () => {
+      const amount = buyTokenAmount
+      const invalidMinSolAmount = tokenomics.calculateSolAmountForSell(await getCirculatingSupply(), amount) + 1n
 
-        await sell(amount, calculatedSolAmount)
+      try {
+        await sell(toBN(amount), toBN(invalidMinSolAmount))
+        assert.fail('The program did not panic')
+      } catch (err) {
+        assert(err instanceof anchor.AnchorError, 'Unexpected error type')
+        const anchorErr = err as anchor.AnchorError
+        expect(anchorErr.error.errorCode.code).to.eq('LessThanMinSolAmount')
+        expect(anchorErr.error.errorMessage).to.eq('Calculated sol amount is less than min sol amount')
+      }
+    })
 
-        let finalBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress())
+    it('fails if curve is complete', async () => {
+      await buy(curveSol, 0n)
 
-        expect(fromBN(finalBondingCurve.reserveSol)).to.eq(fromBN(initialBondingCurve.reserveSol) - calculatedSolAmount)
-        expect(fromBN(finalBondingCurve.reserveToken)).to.eq(fromBN(initialBondingCurve.reserveToken) + amount)
-      })
-
-      it('fails if sol amount is less than min sol receive', async () => {
-        const amount = toTokenValue(200_000_000n)
-        const invalidMinSolReceive = tokenomics.calculateSolAmount(await getCirculatingSupply(), amount) + 1n
-
-        try {
-          await sell(toBN(amount), toBN(invalidMinSolReceive))
-          assert.fail('The program did not panic')
-        } catch (err) {
-          assert(err instanceof anchor.AnchorError, 'Unexpected error type')
-          const anchorErr = err as anchor.AnchorError
-          expect(anchorErr.error.errorCode.code).to.eq('LessThanMinSolReceive')
-          expect(anchorErr.error.errorMessage).to.eq('Calculated sol amount is less than min sol receive')
-        }
-      })
-
-      it('fails to sell after threshold reached', async () => {
-        await buy(solThreshold * 2n, calculatedTokenAmount)
-        try {
-          await sell(buyAmount, calculatedTokenAmount)
-          assert.fail('The program did not panic')
-        } catch (err) {
-          assert(err instanceof anchor.AnchorError, 'Unexpected error type')
-          const anchorErr = err as anchor.AnchorError
-          expect(anchorErr.error.errorCode.code).to.eq('BondingCurveIsComplete')
-          expect(anchorErr.error.errorMessage).to.eq('Trade is not allowed after bonding curve is complete')
-        }
-      })
+      try {
+        await sell(buyTokenAmount, 0n)
+        assert.fail('The program did not panic')
+      } catch (err) {
+        assert(err instanceof anchor.AnchorError, 'Unexpected error type')
+        const anchorErr = err as anchor.AnchorError
+        expect(anchorErr.error.errorCode.code).to.eq('BondingCurveCompleted')
+        expect(anchorErr.error.errorMessage).to.eq('Trade not allowed after threshold reached')
+      }
     })
   })
 
@@ -298,20 +260,16 @@ describe('meme-pad', () => {
     beforeEach(async () => {
       mintKeypair = new Keypair()
       await createMint()
+      await createTokenAccount(mintKeypair.publicKey, user.publicKey)
     })
 
     it('withdraws', async () => {
-      await createAssociatedTokenAccountIdempotent(provider.connection, user.payer, mintKeypair.publicKey, user.publicKey)
-      await buy(solThreshold * 2n, tokenThreshold)
-
+      await buy(BigInt(curveSol), 0n)
       await expectWithdraw()
     })
 
     it('fails to withdraw before threshold reached', async () => {
-      const buyAmount = 50n * BigInt(LAMPORTS_PER_SOL)
-      const calculatedTokenAmount = tokenomics.calculateTokenAmount(0n, buyAmount)
-      await createAssociatedTokenAccountIdempotent(provider.connection, user.payer, mintKeypair.publicKey, user.publicKey)
-      await buy(buyAmount, calculatedTokenAmount)
+      await buy(BigInt(curveSol) / 2n, 0n)
 
       try {
         await withdraw()
@@ -319,16 +277,14 @@ describe('meme-pad', () => {
       } catch (err) {
         assert(err instanceof anchor.AnchorError, 'Unexpected error type')
         const anchorErr = err as anchor.AnchorError
-        expect(anchorErr.error.errorCode.code).to.eq('BondingCurveNotComplete')
-        expect(anchorErr.error.errorMessage).to.eq('Withdraw not allowed before bonding curve is complete')
+        expect(anchorErr.error.errorCode.code).to.eq('BondingCurveNotCompleted')
+        expect(anchorErr.error.errorMessage).to.eq('Withdraw not allowed before threshold reached')
       }
     })
 
     it('fails to withdraw more than once', async () => {
-      await createAssociatedTokenAccountIdempotent(provider.connection, user.payer, mintKeypair.publicKey, user.publicKey)
-      await buy(solThreshold * 2n, tokenThreshold)
-
-      await expectWithdraw()
+      await buy(BigInt(curveSol), 0n)
+      await withdraw()
 
       try {
         await withdraw()
@@ -349,108 +305,140 @@ describe('meme-pad', () => {
         mintAccount: mintKeypair.publicKey,
       })
       .signers([mintKeypair])
-      .rpc()
+      .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
 
     if (logTxs) {
       console.log('Create Mint: ', txSignature)
     }
   }
 
-  async function expectBuy(solAmount: bigint) {
-    const circulatingSupply = await getCirculatingSupply()
-    const calculatedTokenAmount = tokenomics.calculateTokenAmount(circulatingSupply, solAmount)
-    const feeAmount = solAmount * BigInt(feeBasisPoints) / 10_000n
+  async function createTokenAccount(mint: PublicKey, owner: PublicKey) {
+    await createAssociatedTokenAccountIdempotent(provider.connection, user.payer, mint, owner, {
+      commitment: 'confirmed',
+      preflightCommitment: 'confirmed',
+    })
+  }
 
-    const initialUserBalance = await getBalance(user.publicKey)
-    const initialBondingCurveBalance = await getBalance(getBondingCurveAddress())
-    const initialFeeRecipientBalance = await getBalance(feeRecipientKeypair.publicKey)
+  async function expectBuy(solAmount: bigint, minTokenAmount: bigint, expectedSolAmount: bigint, expectedTokenAmount: bigint) {
+    const feeAmount = Number((expectedSolAmount * BigInt(feeBasisPoints)) / 10_000n)
 
-    const initialUserTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey))
-    const initialVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
+    const initialUserBalance = await provider.connection.getBalance(user.publicKey)
+    const initialBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())
+    const initialFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
+    const initialBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
-    const tx = await buy(solAmount, calculatedTokenAmount)
+    const initialUserTokenBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey)
+    )
+    const initialVaultBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
+    )
 
-    const finalUserBalance = await getBalance(user.publicKey)
-    const finalBondingCurveBalance = await getBalance(getBondingCurveAddress())
-    const finalFeeRecipientBalance = await getBalance(feeRecipientKeypair.publicKey)
+    const tx = await buy(solAmount, minTokenAmount)
 
-    const finalUserTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey))
-    const finalVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
+    const finalUserBalance = await provider.connection.getBalance(user.publicKey)
+    const finalBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())
+    const finalFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
+    const finalBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
-    const expectedFinalBalance = initialUserBalance - solAmount - feeAmount - BigInt(tx.meta.fee.toString())
+    const finalUserTokenBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey)
+    )
+    const finalVaultBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
+    )
 
-    expect(finalUserBalance).to.be.closeToBigInt(expectedFinalBalance, 50n)
-    expect(finalBondingCurveBalance).to.eq(initialBondingCurveBalance + solAmount)
+    const expectedFinalBalance = initialUserBalance - Number(expectedSolAmount) - feeAmount - tx.meta.fee
+
+    expect(finalUserBalance).to.be.closeTo(expectedFinalBalance, 100)
+    expect(finalBondingCurveBalance).to.eq(initialBondingCurveBalance + Number(expectedSolAmount))
     expect(finalFeeRecipientBalance).to.eq(initialFeeRecipientBalance + feeAmount)
-    expect(finalUserTokenBalance).to.eq(initialUserTokenBalance + calculatedTokenAmount)
-    expect(finalVaultBalance).to.eq(initialVaultBalance - calculatedTokenAmount)
+    expect(finalUserTokenBalance.value.amount).to.eq((BigInt(initialUserTokenBalance.value.amount) + expectedTokenAmount).toString())
+    expect(finalVaultBalance.value.amount).to.eq((BigInt(initialVaultBalance.value.amount) - expectedTokenAmount).toString())
+
+    expect(fromBN(finalBondingCurve.reserveSol) - fromBN(initialBondingCurve.reserveSol)).to.eq(expectedSolAmount)
+    expect(fromBN(initialBondingCurve.reserveToken) - fromBN(finalBondingCurve.reserveToken)).to.eq(expectedTokenAmount)
   }
 
   async function expectSell(tokenAmount: bigint) {
     const circulatingSupply = await getCirculatingSupply()
-    const calculatedSolAmount = tokenomics.calculateSolAmount(circulatingSupply, tokenAmount)
-    const feeAmount = calculatedSolAmount * BigInt(feeBasisPoints) / 10_000n
+    const solAmount = tokenomics.calculateSolAmountForSell(circulatingSupply, tokenAmount)
+    const feeAmount = Number((solAmount * BigInt(feeBasisPoints)) / 10_000n)
 
-    const initialUserBalance = await getBalance(user.publicKey)
-    const initialBondingCurveBalance = await getBalance(getBondingCurveAddress())
-    const initialFeeRecipientBalance = await getBalance(feeRecipientKeypair.publicKey)
+    const initialUserBalance = await provider.connection.getBalance(user.publicKey)
+    const initialBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())
+    const initialFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
+    const initialBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
-    const initialUserTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey))
-    const initialVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
+    const initialUserTokenBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey)
+    )
+    const initialVaultBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
+    )
 
-    const tx = await sell(tokenAmount, calculatedSolAmount)
+    const tx = await sell(tokenAmount, solAmount)
 
-    const finalUserBalance = await getBalance(user.publicKey)
-    const finalBondingCurveBalance = await getBalance(getBondingCurveAddress())
-    const finalFeeRecipientBalance = await getBalance(feeRecipientKeypair.publicKey)
+    const finalUserBalance = await provider.connection.getBalance(user.publicKey)
+    const finalBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())
+    const finalFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
+    const finalBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
-    const finalUserTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey))
-    const finalVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
+    const finalUserTokenBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey)
+    )
+    const finalVaultBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
+    )
 
-    const expectedFinalBalance = initialUserBalance + calculatedSolAmount - feeAmount - BigInt(tx.meta.fee.toString())
+    const expectedFinalBalance = initialUserBalance + Number(solAmount) - feeAmount - tx.meta.fee
 
-    expect(finalUserBalance).to.be.closeToBigInt(expectedFinalBalance, 50n)
-    expect(finalBondingCurveBalance).to.eq(initialBondingCurveBalance - calculatedSolAmount)
+    expect(finalUserBalance).to.be.closeTo(expectedFinalBalance, 100)
+    expect(finalBondingCurveBalance).to.eq(initialBondingCurveBalance - Number(solAmount))
     expect(finalFeeRecipientBalance).to.eq(initialFeeRecipientBalance + feeAmount)
-    expect(finalUserTokenBalance).to.eq(initialUserTokenBalance - tokenAmount)
-    expect(finalVaultBalance).to.eq(initialVaultBalance + tokenAmount)
+    expect(finalUserTokenBalance.value.amount).to.eq((BigInt(initialUserTokenBalance.value.amount) - tokenAmount).toString())
+    expect(finalVaultBalance.value.amount).to.eq((BigInt(initialVaultBalance.value.amount) + tokenAmount).toString())
+
+    expect(fromBN(initialBondingCurve.reserveSol) - fromBN(finalBondingCurve.reserveSol)).to.eq(solAmount)
+    expect(fromBN(finalBondingCurve.reserveToken) - fromBN(initialBondingCurve.reserveToken)).to.eq(tokenAmount)
   }
 
   async function expectWithdraw() {
-    const initialMigrationBalance = await getBalance(migrationKeypair.publicKey)
-    const initialBondingCurveBalance = await getBalance(getBondingCurveAddress())
-    const initialBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress())
-    const initialMigrationTokenBalance = await getTokenAccountBalance(
+    const initialMigrationBalance = await provider.connection.getBalance(migrationKeypair.publicKey)
+    const initialBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())
+    const initialBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
+    const initialMigrationTokenBalance = await provider.connection.getTokenAccountBalance(
       getAssociatedTokenAddressSync(mintKeypair.publicKey, migrationKeypair.publicKey)
     )
 
     const tx = await withdraw()
 
-    const finalMigrationBalance = await getBalance(migrationKeypair.publicKey)
-    const finalBondingCurveBalance = await getBalance(getBondingCurveAddress())
-    const finalBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress())
-    const finalMigrationTokenBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, migrationKeypair.publicKey))
-    const finalVaultBalance = await getTokenAccountBalance(getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true))
-
-    expect(finalMigrationBalance).to.be.closeToBigInt(
-      initialMigrationBalance + fromBN(initialBondingCurve.reserveSol) - BigInt(tx.meta.fee.toString()),
-      100n
+    const finalMigrationBalance = await provider.connection.getBalance(migrationKeypair.publicKey)
+    const finalBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())
+    const finalBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
+    const finalMigrationTokenBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, migrationKeypair.publicKey)
     )
-    expect(finalBondingCurveBalance).to.eq(initialBondingCurveBalance - fromBN(initialBondingCurve.reserveSol))
+    const finalVaultBalance = await provider.connection.getTokenAccountBalance(
+      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
+    )
+
+    expect(finalMigrationBalance).to.be.closeTo(initialMigrationBalance + initialBondingCurve.reserveSol.toNumber() - tx.meta.fee, 100)
+    expect(finalBondingCurveBalance).to.eq(initialBondingCurveBalance - initialBondingCurve.reserveSol.toNumber())
     const remainingTokens = tokenSupply - tokenThreshold
-    expect(finalMigrationTokenBalance).to.eq(initialMigrationTokenBalance + remainingTokens)
-    expect(finalVaultBalance).to.eq(0n)
-    expect(fromBN(finalBondingCurve.reserveToken)).to.eq(0n)
-    expect(fromBN(finalBondingCurve.reserveSol)).to.eq(0n)
+    expect(finalMigrationTokenBalance.value.amount).to.eq((BigInt(initialMigrationTokenBalance.value.amount) + remainingTokens).toString())
+    expect(finalVaultBalance.value.amount).to.eq('0')
+    expect(finalBondingCurve.reserveToken.toNumber()).to.eq(0)
+    expect(finalBondingCurve.reserveSol.toNumber()).to.eq(0)
   }
 
-  async function buy(solAmount: bigint, minTokenReceive: bigint) {
+  async function buy(solAmount: bigint, minTokenAmount: bigint) {
     const txSignature = await program.methods
-      .buy(toBN(solAmount), toBN(minTokenReceive))
+      .buy(toBN(solAmount), toBN(minTokenAmount))
       .accounts({
         mintAccount: mintKeypair.publicKey,
       })
-      .rpc({ commitment: 'confirmed' })
+      .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
 
     if (logTxs) {
       console.log('Buy: ', txSignature)
@@ -459,13 +447,13 @@ describe('meme-pad', () => {
     return await provider.connection.getParsedTransaction(txSignature, 'confirmed')
   }
 
-  async function sell(tokenAmount: bigint, minSolReceive: bigint) {
+  async function sell(tokenAmount: bigint, minSolAmount: bigint) {
     const txSignature = await program.methods
-      .sell(toBN(tokenAmount), toBN(minSolReceive))
+      .sell(toBN(tokenAmount), toBN(minSolAmount))
       .accounts({
         mintAccount: mintKeypair.publicKey,
       })
-      .rpc({ commitment: 'confirmed' })
+      .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
 
     if (logTxs) {
       console.log('Sell: ', txSignature)
@@ -480,7 +468,7 @@ describe('meme-pad', () => {
       .accounts({
         mintAccount: mintKeypair.publicKey,
       })
-      .rpc({ commitment: 'confirmed' })
+      .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
 
     if (logTxs) {
       console.log('Withdraw: ', txSignature)
@@ -499,18 +487,8 @@ describe('meme-pad', () => {
   }
 
   async function getCirculatingSupply() {
-    let bondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress())
+    let bondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
     return tokenThreshold - fromBN(bondingCurve.reserveToken)
-  }
-
-  async function getBalance(address: PublicKey) {
-    const balance = await provider.connection.getBalance(address)
-    return BigInt(balance.toString())
-  }
-
-  async function getTokenAccountBalance(address: PublicKey) {
-    const balance = await provider.connection.getTokenAccountBalance(address)
-    return BigInt(balance.value.amount)
   }
 
   function toTokenValue(value: bigint) {

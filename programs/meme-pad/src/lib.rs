@@ -38,12 +38,12 @@ pub mod meme_pad {
         instructions::create(ctx, name, symbol, uri)
     }
 
-    pub fn buy(ctx: Context<Trade>, sol_amount: u64, min_token_receive: u64) -> Result<()> {
-        instructions::buy(ctx, sol_amount, min_token_receive)
+    pub fn buy(ctx: Context<Trade>, sol_amount: u64, min_token_amount: u64) -> Result<()> {
+        instructions::buy(ctx, sol_amount, min_token_amount)
     }
 
-    pub fn sell(ctx: Context<Trade>, token_amount: u64, min_sol_receive: u64) -> Result<()> {
-        instructions::sell(ctx, token_amount, min_sol_receive)
+    pub fn sell(ctx: Context<Trade>, token_amount: u64, min_sol_amount: u64) -> Result<()> {
+        instructions::sell(ctx, token_amount, min_sol_amount)
     }
 
     pub fn withdraw(ctx: Context<Withdraw>) -> Result<()> {

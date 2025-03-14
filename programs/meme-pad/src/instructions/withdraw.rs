@@ -1,7 +1,7 @@
 use crate::state::{BondingCurve, BondingCurveAccount, GlobalConfig};
+use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{Mint, Token, TokenAccount};
-use anchor_lang::prelude::*;
 
 pub fn withdraw(ctx: Context<Withdraw>) -> Result<()> {
     let bonding_curve = &mut ctx.accounts.bonding_curve;
