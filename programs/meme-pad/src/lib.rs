@@ -1,12 +1,14 @@
 use anchor_lang::prelude::*;
 use instructions::*;
+use types::*;
 
 pub mod constants;
 pub mod errors;
 pub mod events;
 pub mod instructions;
 pub mod state;
-mod tokenomics;
+pub mod tokenomics;
+pub mod types;
 
 declare_id!("3ZEqFj8xa6ZG67et6ve5prKDymp2Po6im6B2HeRv5Zee");
 
@@ -44,12 +46,22 @@ pub mod meme_pad {
         instructions::create(ctx, name, symbol, uri)
     }
 
-    pub fn buy(ctx: Context<Trade>, sol_amount: u64, min_token_amount: u64) -> Result<()> {
-        instructions::buy(ctx, sol_amount, min_token_amount)
+    pub fn buy(
+        ctx: Context<Trade>,
+        sol_amount: u64,
+        min_token_amount: u64,
+        referral_data: ReferralData,
+    ) -> Result<()> {
+        instructions::buy(ctx, sol_amount, min_token_amount, referral_data)
     }
 
-    pub fn sell(ctx: Context<Trade>, token_amount: u64, min_sol_amount: u64) -> Result<()> {
-        instructions::sell(ctx, token_amount, min_sol_amount)
+    pub fn sell(
+        ctx: Context<Trade>,
+        token_amount: u64,
+        min_sol_amount: u64,
+        referral_data: ReferralData,
+    ) -> Result<()> {
+        instructions::sell(ctx, token_amount, min_sol_amount, referral_data)
     }
 
     pub fn withdraw(ctx: Context<Withdraw>) -> Result<()> {

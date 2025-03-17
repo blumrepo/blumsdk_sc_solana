@@ -1,13 +1,19 @@
 use crate::errors::ErrorCode;
+use crate::events::BuyEvent;
 use crate::instructions::Trade;
 use crate::state::BondingCurve;
 use crate::tokenomics::{calculate_sol_amount, calculate_token_amount};
+use crate::types::ReferralData;
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 use anchor_spl::token::{transfer, Transfer};
-use crate::events::BuyEvent;
 
-pub fn buy(ctx: Context<Trade>, mut sol_amount: u64, mut min_token_amount: u64) -> Result<()> {
+pub fn buy(
+    ctx: Context<Trade>,
+    mut sol_amount: u64,
+    mut min_token_amount: u64,
+    referral_data: ReferralData,
+) -> Result<()> {
     let bonding_curve = &mut ctx.accounts.bonding_curve;
 
     require!(
@@ -87,6 +93,7 @@ pub fn buy(ctx: Context<Trade>, mut sol_amount: u64, mut min_token_amount: u64) 
         token_amount,
         reserve_sol: bonding_curve.reserve_sol,
         reserve_token: bonding_curve.reserve_sol,
+        referral_data
     });
 
     Ok(())

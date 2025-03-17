@@ -30,6 +30,7 @@ describe('meme-pad', () => {
 
   const authorityKeypair = new Keypair()
   const feeRecipientKeypair = new Keypair()
+  const partnerPubKey = new Keypair().publicKey
   const migrationKeypair = user.payer
 
   const deployFee = BigInt(0.5 * LAMPORTS_PER_SOL)
@@ -453,7 +454,7 @@ describe('meme-pad', () => {
 
   async function buy(solAmount: bigint, minTokenAmount: bigint) {
     const txSignature = await program.methods
-      .buy(toBN(solAmount), toBN(minTokenAmount))
+      .buy(toBN(solAmount), toBN(minTokenAmount), { partner: partnerPubKey })
       .accounts({
         mintAccount: mintKeypair.publicKey,
       })
@@ -468,7 +469,7 @@ describe('meme-pad', () => {
 
   async function sell(tokenAmount: bigint, minSolAmount: bigint) {
     const txSignature = await program.methods
-      .sell(toBN(tokenAmount), toBN(minSolAmount))
+      .sell(toBN(tokenAmount), toBN(minSolAmount), { partner: partnerPubKey })
       .accounts({
         mintAccount: mintKeypair.publicKey,
       })

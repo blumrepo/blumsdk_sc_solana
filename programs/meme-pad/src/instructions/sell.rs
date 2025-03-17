@@ -2,11 +2,17 @@ use crate::errors::ErrorCode;
 use crate::events::SellEvent;
 use crate::instructions::Trade;
 use crate::tokenomics::calculate_sol_amount;
+use crate::types::ReferralData;
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 use anchor_spl::token::{transfer, Transfer};
 
-pub fn sell(ctx: Context<Trade>, token_amount: u64, min_sol_amount: u64) -> Result<()> {
+pub fn sell(
+    ctx: Context<Trade>,
+    token_amount: u64,
+    min_sol_amount: u64,
+    referral_data: ReferralData,
+) -> Result<()> {
     let bonding_curve = &mut ctx.accounts.bonding_curve;
 
     require!(
@@ -70,6 +76,7 @@ pub fn sell(ctx: Context<Trade>, token_amount: u64, min_sol_amount: u64) -> Resu
         token_amount,
         reserve_sol: bonding_curve.reserve_sol,
         reserve_token: bonding_curve.reserve_sol,
+        referral_data
     });
 
     Ok(())

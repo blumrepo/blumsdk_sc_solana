@@ -1,3 +1,4 @@
+use crate::types::ReferralData;
 use anchor_lang::event;
 use anchor_lang::prelude::*;
 
@@ -8,6 +9,7 @@ pub struct BuyEvent {
     pub token_amount: u64,
     pub reserve_sol: u64,
     pub reserve_token: u64,
+    pub referral_data: ReferralData,
 }
 
 #[event]
@@ -17,4 +19,5 @@ pub struct SellEvent {
     pub token_amount: u64,
     pub reserve_sol: u64,
     pub reserve_token: u64,
+    pub referral_data: ReferralData,
 }
