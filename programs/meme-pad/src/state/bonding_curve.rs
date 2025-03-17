@@ -1,10 +1,10 @@
+use crate::events::{BuyEvent, SellEvent};
+use crate::state::GlobalConfig;
+use crate::tokenomics::{calculate_sol_amount, calculate_token_amount};
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 use anchor_spl::token::{transfer, Mint, Token, TokenAccount, Transfer};
 use std::cmp::min;
-
-use crate::state::GlobalConfig;
-use crate::tokenomics::{calculate_sol_amount, calculate_token_amount};
 
 #[account]
 #[derive(InitSpace)]
@@ -138,6 +138,14 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
         self.reserve_token -= token_amount;
         self.reserve_sol += sol_amount;
 
+        emit_cpi!(BuyEvent {
+            buyer: user.key(),
+            sol_amount,
+            token_amount,
+            reserve_sol: self.reserve_sol,
+            reserve_token: self.reserve_sol,
+        });
+
         Ok(())
     }
 
@@ -203,6 +211,14 @@ impl<'info> BondingCurveAccount<'info> for Account<'info, BondingCurve> {
         }
 
         self.reserve_token += token_amount;
+
+        emit_cpi!(SellEvent {
+            seller: user.key(),
+            sol_amount,
+            token_amount,
+            reserve_sol: self.reserve_sol,
+            reserve_token: self.reserve_sol,
+        });
 
         Ok(())
     }
