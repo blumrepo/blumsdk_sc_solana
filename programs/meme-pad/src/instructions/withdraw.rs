@@ -1,19 +1,44 @@
-use crate::state::{BondingCurve, BondingCurveAccount, GlobalConfig};
+use crate::errors::ErrorCode;
+use crate::state::{BondingCurve, GlobalConfig};
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{transfer, Transfer};
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
 pub fn withdraw(ctx: Context<Withdraw>) -> Result<()> {
     let bonding_curve = &mut ctx.accounts.bonding_curve;
 
-    bonding_curve.withdraw(
-        &ctx.accounts.mint_account,
-        &ctx.accounts.migration_account,
-        &mut ctx.accounts.migration_token_account,
-        &mut ctx.accounts.vault,
-        ctx.bumps.bonding_curve,
-        &ctx.accounts.token_program,
+    require!(
+        bonding_curve.reserve_token == 0,
+        ErrorCode::BondingCurveNotCompleted
+    );
+    require!(
+        bonding_curve.reserve_sol != 0 || ctx.accounts.vault.amount != 0,
+        ErrorCode::AlreadyWithdrawn
+    );
+
+    transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.vault.to_account_info(),
+                to: ctx.accounts.migration_token_account.to_account_info(),
+                authority: bonding_curve.to_account_info(),
+            },
+            &[&[
+                BondingCurve::SEED_PREFIX.as_bytes(),
+                ctx.accounts.mint_account.key().as_ref(),
+                &[ctx.bumps.bonding_curve],
+            ]],
+        ),
+        ctx.accounts.vault.amount,
     )?;
+
+    **bonding_curve.to_account_info().try_borrow_mut_lamports()? -= bonding_curve.reserve_sol;
+    **ctx.accounts.migration_account.try_borrow_mut_lamports()? += bonding_curve.reserve_sol;
+
+    bonding_curve.reserve_token = 0;
+    bonding_curve.reserve_sol = 0;
 
     Ok(())
 }

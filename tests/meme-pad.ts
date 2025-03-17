@@ -88,7 +88,7 @@ describe('meme-pad', () => {
     })
   })
 
-  describe.only('Create Mint', () => {
+  describe('Create Mint', () => {
     beforeEach(async () => {
       mintKeypair = new Keypair()
     })

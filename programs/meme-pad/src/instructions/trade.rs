@@ -1,3 +1,4 @@
+use crate::state::{BondingCurve, GlobalConfig};
 use {
     anchor_lang::prelude::*,
     anchor_spl::{
@@ -6,46 +7,7 @@ use {
     },
 };
 
-use crate::state::{BondingCurve, BondingCurveAccount, GlobalConfig};
-
-pub fn buy(ctx: Context<Trade>, sol_amount: u64, min_token_amount: u64) -> Result<()> {
-    let bonding_curve = &mut ctx.accounts.bonding_curve;
-
-    bonding_curve.buy(
-        &ctx.accounts.global_config,
-        &ctx.accounts.fee_recipient,
-        &ctx.accounts.mint_account,
-        &ctx.accounts.user,
-        &mut ctx.accounts.user_token_account,
-        &mut ctx.accounts.vault,
-        ctx.bumps.bonding_curve,
-        &ctx.accounts.token_program,
-        &ctx.accounts.system_program,
-        sol_amount,
-        min_token_amount,
-    )?;
-
-    Ok(())
-}
-
-pub fn sell(ctx: Context<Trade>, token_amount: u64, min_sol_amount: u64) -> Result<()> {
-    let bonding_curve = &mut ctx.accounts.bonding_curve;
-
-    bonding_curve.sell(
-        &ctx.accounts.global_config,
-        &ctx.accounts.fee_recipient,
-        &ctx.accounts.user,
-        &mut ctx.accounts.user_token_account,
-        &mut ctx.accounts.vault,
-        &ctx.accounts.token_program,
-        &ctx.accounts.system_program,
-        token_amount,
-        min_sol_amount,
-    )?;
-
-    Ok(())
-}
-
+#[event_cpi]
 #[derive(Accounts)]
 pub struct Trade<'info> {
     #[account(mut)]

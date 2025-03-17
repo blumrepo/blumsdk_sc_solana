@@ -12,7 +12,7 @@ use anchor_spl::{
     },
 };
 
-use crate::consts::{DECIMALS, DISCRIMINATOR};
+use crate::constants::{DECIMALS, DISCRIMINATOR};
 use crate::state::{BondingCurve, GlobalConfig, MintAuthorityPda};
 
 pub fn create(ctx: Context<Create>, name: String, symbol: String, uri: String) -> Result<()> {

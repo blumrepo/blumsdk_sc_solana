@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::consts::DISCRIMINATOR;
+use crate::constants::DISCRIMINATOR;
 use crate::state::{GlobalConfig, MintAuthorityPda};
 
 pub fn initialize(
