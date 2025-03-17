@@ -30,8 +30,8 @@ describe('meme-pad', () => {
 
   const authorityKeypair = new Keypair()
   const feeRecipientKeypair = new Keypair()
-  const partnerPubKey = new Keypair().publicKey
   const migrationKeypair = user.payer
+  const partnerPubKey = new Keypair().publicKey
 
   const deployFee = BigInt(0.5 * LAMPORTS_PER_SOL)
   const buyFeeBps = 130
@@ -65,9 +65,7 @@ describe('meme-pad', () => {
 
   describe('Initialize Meme Pad', () => {
     it('creates global config and fills with provided data', async () => {
-      const [globalConfigAddress] = anchor.web3.PublicKey.findProgramAddressSync([Buffer.from('global_config')], program.programId)
-
-      let globalConfig = await program.account.globalConfig.fetch(globalConfigAddress, 'confirmed')
+      let globalConfig = await fetchGlobalConfig()
 
       expect(globalConfig.authority.toString()).to.eq(authorityKeypair.publicKey.toString())
       expect(globalConfig.feeRecipient.toString()).to.eq(feeRecipientKeypair.publicKey.toString())
@@ -86,6 +84,90 @@ describe('meme-pad', () => {
       let balance = await provider.connection.getBalance(mintAuthorityAddress)
 
       expect(balance).to.not.eq(0)
+    })
+  })
+
+  describe.only('Update Global Config', () => {
+    it('updates global config with provided data', async () => {
+      const newAuthorityKeypair = new Keypair()
+      const newFeeRecipientKeypair = new Keypair()
+      const newMigrationKeypair = new Keypair()
+      const newDeployFee = BigInt(2 * LAMPORTS_PER_SOL)
+      const newBuyFeeBps = 150
+      const newSellFeeBps = 50
+      const newTokenSupply = toTokenValue(2_000_000_000n)
+      const newTokenThreshold = 400_000_000_000_000n
+      const newCurveA = 3_000_000_000n
+
+      const txSignature = await program.methods
+        .updateConfig(
+          newAuthorityKeypair.publicKey,
+          newFeeRecipientKeypair.publicKey,
+          newMigrationKeypair.publicKey,
+          toBN(newDeployFee),
+          newBuyFeeBps,
+          newSellFeeBps,
+          toBN(newTokenSupply),
+          toBN(newTokenThreshold),
+          toBN(newCurveA)
+        )
+        .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
+
+      if (logTxs) {
+        console.log('Update Global Config: ', txSignature)
+      }
+
+      let globalConfig = await fetchGlobalConfig()
+
+      expect(globalConfig.authority.toString()).to.eq(newAuthorityKeypair.publicKey.toString())
+      expect(globalConfig.feeRecipient.toString()).to.eq(newFeeRecipientKeypair.publicKey.toString())
+      expect(globalConfig.migrationAccount.toString()).to.eq(newMigrationKeypair.publicKey.toString())
+      expect(fromBN(globalConfig.deployFee)).to.eq(newDeployFee)
+      expect(globalConfig.buyFeeBps).to.eq(newBuyFeeBps)
+      expect(globalConfig.sellFeeBps).to.eq(newSellFeeBps)
+      expect(fromBN(globalConfig.tokenSupply)).to.eq(newTokenSupply)
+      expect(fromBN(globalConfig.tokenThreshold)).to.eq(newTokenThreshold)
+      expect(fromBN(globalConfig.curveA)).to.eq(newCurveA)
+    })
+
+    it('updates global config partially', async () => {
+      let oldGlobalConfig = await fetchGlobalConfig()
+
+      const newAuthorityKeypair = new Keypair()
+      const newMigrationKeypair = new Keypair()
+      const newBuyFeeBps = 150
+      const newTokenSupply = toTokenValue(2_000_000_000n)
+      const newCurveA = 3_000_000_000n
+
+      const txSignature = await program.methods
+        .updateConfig(
+          newAuthorityKeypair.publicKey,
+          null,
+          newMigrationKeypair.publicKey,
+          null,
+          newBuyFeeBps,
+          null,
+          toBN(newTokenSupply),
+          null,
+          toBN(newCurveA)
+        )
+        .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
+
+      if (logTxs) {
+        console.log('Update Global Config: ', txSignature)
+      }
+
+      let globalConfig = await fetchGlobalConfig()
+
+      expect(globalConfig.authority.toString()).to.eq(newAuthorityKeypair.publicKey.toString())
+      expect(globalConfig.feeRecipient.toString()).to.eq(oldGlobalConfig.feeRecipient.toString())
+      expect(globalConfig.migrationAccount.toString()).to.eq(newMigrationKeypair.publicKey.toString())
+      expect(fromBN(globalConfig.deployFee)).to.eq(fromBN(oldGlobalConfig.deployFee))
+      expect(globalConfig.buyFeeBps).to.eq(newBuyFeeBps)
+      expect(globalConfig.sellFeeBps).to.eq(oldGlobalConfig.sellFeeBps)
+      expect(fromBN(globalConfig.tokenSupply)).to.eq(newTokenSupply)
+      expect(fromBN(globalConfig.tokenThreshold)).to.eq(fromBN(oldGlobalConfig.tokenThreshold))
+      expect(fromBN(globalConfig.curveA)).to.eq(newCurveA)
     })
   })
 
@@ -495,6 +577,11 @@ describe('meme-pad', () => {
     }
 
     return await provider.connection.getParsedTransaction(txSignature, 'confirmed')
+  }
+
+  async function fetchGlobalConfig() {
+    const [globalConfigAddress] = anchor.web3.PublicKey.findProgramAddressSync([Buffer.from('global_config')], program.programId)
+    return await program.account.globalConfig.fetch(globalConfigAddress, 'confirmed')
   }
 
   function getBondingCurveAddress() {

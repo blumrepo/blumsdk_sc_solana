@@ -42,6 +42,32 @@ pub mod meme_pad {
         )
     }
 
+    pub fn update_config(
+        ctx: Context<UpdateConfig>,
+        authority: Option<Pubkey>,
+        fee_recipient: Option<Pubkey>,
+        migration_account: Option<Pubkey>,
+        deploy_fee: Option<u64>,
+        buy_fee_bps: Option<u8>,
+        sell_fee_bps: Option<u8>,
+        token_supply: Option<u64>,
+        token_threshold: Option<u64>,
+        curve_a: Option<u64>,
+    ) -> Result<()> {
+        instructions::update_config(
+            ctx,
+            authority,
+            fee_recipient,
+            migration_account,
+            deploy_fee,
+            buy_fee_bps,
+            sell_fee_bps,
+            token_supply,
+            token_threshold,
+            curve_a,
+        )
+    }
+
     pub fn create(ctx: Context<Create>, name: String, symbol: String, uri: String) -> Result<()> {
         instructions::create(ctx, name, symbol, uri)
     }
