@@ -10,7 +10,7 @@ pub mod state;
 pub mod tokenomics;
 pub mod types;
 
-declare_id!("3ZEqFj8xa6ZG67et6ve5prKDymp2Po6im6B2HeRv5Zee");
+declare_id!("CKnzvtXPSkQEd31KiRWw5fKR4HKpvNvFWXTKcApMGfze");
 
 #[program]
 pub mod meme_pad {

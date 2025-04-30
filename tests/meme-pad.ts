@@ -87,90 +87,6 @@ describe('meme-pad', () => {
     })
   })
 
-  describe.only('Update Global Config', () => {
-    it('updates global config with provided data', async () => {
-      const newAuthorityKeypair = new Keypair()
-      const newFeeRecipientKeypair = new Keypair()
-      const newMigrationKeypair = new Keypair()
-      const newDeployFee = BigInt(2 * LAMPORTS_PER_SOL)
-      const newBuyFeeBps = 150
-      const newSellFeeBps = 50
-      const newTokenSupply = toTokenValue(2_000_000_000n)
-      const newTokenThreshold = 400_000_000_000_000n
-      const newCurveA = 3_000_000_000n
-
-      const txSignature = await program.methods
-        .updateConfig(
-          newAuthorityKeypair.publicKey,
-          newFeeRecipientKeypair.publicKey,
-          newMigrationKeypair.publicKey,
-          toBN(newDeployFee),
-          newBuyFeeBps,
-          newSellFeeBps,
-          toBN(newTokenSupply),
-          toBN(newTokenThreshold),
-          toBN(newCurveA)
-        )
-        .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
-
-      if (logTxs) {
-        console.log('Update Global Config: ', txSignature)
-      }
-
-      let globalConfig = await fetchGlobalConfig()
-
-      expect(globalConfig.authority.toString()).to.eq(newAuthorityKeypair.publicKey.toString())
-      expect(globalConfig.feeRecipient.toString()).to.eq(newFeeRecipientKeypair.publicKey.toString())
-      expect(globalConfig.migrationAccount.toString()).to.eq(newMigrationKeypair.publicKey.toString())
-      expect(fromBN(globalConfig.deployFee)).to.eq(newDeployFee)
-      expect(globalConfig.buyFeeBps).to.eq(newBuyFeeBps)
-      expect(globalConfig.sellFeeBps).to.eq(newSellFeeBps)
-      expect(fromBN(globalConfig.tokenSupply)).to.eq(newTokenSupply)
-      expect(fromBN(globalConfig.tokenThreshold)).to.eq(newTokenThreshold)
-      expect(fromBN(globalConfig.curveA)).to.eq(newCurveA)
-    })
-
-    it('updates global config partially', async () => {
-      let oldGlobalConfig = await fetchGlobalConfig()
-
-      const newAuthorityKeypair = new Keypair()
-      const newMigrationKeypair = new Keypair()
-      const newBuyFeeBps = 150
-      const newTokenSupply = toTokenValue(2_000_000_000n)
-      const newCurveA = 3_000_000_000n
-
-      const txSignature = await program.methods
-        .updateConfig(
-          newAuthorityKeypair.publicKey,
-          null,
-          newMigrationKeypair.publicKey,
-          null,
-          newBuyFeeBps,
-          null,
-          toBN(newTokenSupply),
-          null,
-          toBN(newCurveA)
-        )
-        .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
-
-      if (logTxs) {
-        console.log('Update Global Config: ', txSignature)
-      }
-
-      let globalConfig = await fetchGlobalConfig()
-
-      expect(globalConfig.authority.toString()).to.eq(newAuthorityKeypair.publicKey.toString())
-      expect(globalConfig.feeRecipient.toString()).to.eq(oldGlobalConfig.feeRecipient.toString())
-      expect(globalConfig.migrationAccount.toString()).to.eq(newMigrationKeypair.publicKey.toString())
-      expect(fromBN(globalConfig.deployFee)).to.eq(fromBN(oldGlobalConfig.deployFee))
-      expect(globalConfig.buyFeeBps).to.eq(newBuyFeeBps)
-      expect(globalConfig.sellFeeBps).to.eq(oldGlobalConfig.sellFeeBps)
-      expect(fromBN(globalConfig.tokenSupply)).to.eq(newTokenSupply)
-      expect(fromBN(globalConfig.tokenThreshold)).to.eq(fromBN(oldGlobalConfig.tokenThreshold))
-      expect(fromBN(globalConfig.curveA)).to.eq(newCurveA)
-    })
-  })
-
   describe('Create Mint', () => {
     beforeEach(async () => {
       mintKeypair = new Keypair()
@@ -199,10 +115,9 @@ describe('meme-pad', () => {
     it('mints all tokens to vault', async () => {
       await createMint()
 
-      const vaultAddress = getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
-      const balance = await provider.connection.getTokenAccountBalance(vaultAddress)
+      const balance = await getTokenBalance(getBondingCurveAddress(), true)
 
-      expect(balance.value.amount).to.eq(tokenSupply.toString())
+      expect(balance.toString()).to.eq(tokenSupply.toString())
     })
 
     it('creates bonding curve', async () => {
@@ -314,6 +229,7 @@ describe('meme-pad', () => {
 
     beforeEach(async () => {
       mintKeypair = new Keypair()
+      mintKeypair = new Keypair()
 
       await createMint()
       await createTokenAccount(mintKeypair.publicKey, user.publicKey)
@@ -400,6 +316,90 @@ describe('meme-pad', () => {
     })
   })
 
+  describe('Update Global Config', () => {
+    it('updates global config with provided data', async () => {
+      const newAuthorityKeypair = new Keypair()
+      const newFeeRecipientKeypair = new Keypair()
+      const newMigrationKeypair = new Keypair()
+      const newDeployFee = BigInt(2 * LAMPORTS_PER_SOL)
+      const newBuyFeeBps = 150
+      const newSellFeeBps = 50
+      const newTokenSupply = toTokenValue(2_000_000_000n)
+      const newTokenThreshold = 400_000_000_000_000n
+      const newCurveA = 3_000_000_000n
+
+      const txSignature = await program.methods
+        .updateConfig(
+          newAuthorityKeypair.publicKey,
+          newFeeRecipientKeypair.publicKey,
+          newMigrationKeypair.publicKey,
+          toBN(newDeployFee),
+          newBuyFeeBps,
+          newSellFeeBps,
+          toBN(newTokenSupply),
+          toBN(newTokenThreshold),
+          toBN(newCurveA)
+        )
+        .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
+
+      if (logTxs) {
+        console.log('Update Global Config: ', txSignature)
+      }
+
+      let globalConfig = await fetchGlobalConfig()
+
+      expect(globalConfig.authority.toString()).to.eq(newAuthorityKeypair.publicKey.toString())
+      expect(globalConfig.feeRecipient.toString()).to.eq(newFeeRecipientKeypair.publicKey.toString())
+      expect(globalConfig.migrationAccount.toString()).to.eq(newMigrationKeypair.publicKey.toString())
+      expect(fromBN(globalConfig.deployFee)).to.eq(newDeployFee)
+      expect(globalConfig.buyFeeBps).to.eq(newBuyFeeBps)
+      expect(globalConfig.sellFeeBps).to.eq(newSellFeeBps)
+      expect(fromBN(globalConfig.tokenSupply)).to.eq(newTokenSupply)
+      expect(fromBN(globalConfig.tokenThreshold)).to.eq(newTokenThreshold)
+      expect(fromBN(globalConfig.curveA)).to.eq(newCurveA)
+    })
+
+    it('updates global config partially', async () => {
+      let oldGlobalConfig = await fetchGlobalConfig()
+
+      const newAuthorityKeypair = new Keypair()
+      const newMigrationKeypair = new Keypair()
+      const newBuyFeeBps = 150
+      const newTokenSupply = toTokenValue(2_000_000_000n)
+      const newCurveA = 3_000_000_000n
+
+      const txSignature = await program.methods
+        .updateConfig(
+          newAuthorityKeypair.publicKey,
+          null,
+          newMigrationKeypair.publicKey,
+          null,
+          newBuyFeeBps,
+          null,
+          toBN(newTokenSupply),
+          null,
+          toBN(newCurveA)
+        )
+        .rpc({ commitment: 'confirmed', preflightCommitment: 'confirmed' })
+
+      if (logTxs) {
+        console.log('Update Global Config: ', txSignature)
+      }
+
+      let globalConfig = await fetchGlobalConfig()
+
+      expect(globalConfig.authority.toString()).to.eq(newAuthorityKeypair.publicKey.toString())
+      expect(globalConfig.feeRecipient.toString()).to.eq(oldGlobalConfig.feeRecipient.toString())
+      expect(globalConfig.migrationAccount.toString()).to.eq(newMigrationKeypair.publicKey.toString())
+      expect(fromBN(globalConfig.deployFee)).to.eq(fromBN(oldGlobalConfig.deployFee))
+      expect(globalConfig.buyFeeBps).to.eq(newBuyFeeBps)
+      expect(globalConfig.sellFeeBps).to.eq(oldGlobalConfig.sellFeeBps)
+      expect(fromBN(globalConfig.tokenSupply)).to.eq(newTokenSupply)
+      expect(fromBN(globalConfig.tokenThreshold)).to.eq(fromBN(oldGlobalConfig.tokenThreshold))
+      expect(fromBN(globalConfig.curveA)).to.eq(newCurveA)
+    })
+  })
+
   async function createMint(name: string = metadata.name, symbol: string = metadata.symbol, uri: string = metadata.uri) {
     const txSignature = await program.methods
       .create(name, symbol, uri)
@@ -429,12 +429,8 @@ describe('meme-pad', () => {
     const initialFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
     const initialBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
-    const initialUserTokenBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey)
-    )
-    const initialVaultBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
-    )
+    const initialUserTokenBalance = await getTokenBalance(user.publicKey)
+    const initialVaultBalance = await getTokenBalance(getBondingCurveAddress(), true)
 
     const tx = await buy(solAmount, minTokenAmount)
 
@@ -443,20 +439,16 @@ describe('meme-pad', () => {
     const finalFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
     const finalBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
-    const finalUserTokenBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey)
-    )
-    const finalVaultBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
-    )
+    const finalUserTokenBalance = await getTokenBalance(user.publicKey)
+    const finalVaultBalance = await getTokenBalance(getBondingCurveAddress(), true)
 
     const expectedFinalBalance = initialUserBalance - Number(expectedSolAmount) - feeAmount - tx.meta.fee
 
     expect(finalUserBalance).to.be.closeTo(expectedFinalBalance, 100)
     expect(finalBondingCurveBalance).to.eq(initialBondingCurveBalance + Number(expectedSolAmount))
     expect(finalFeeRecipientBalance).to.eq(initialFeeRecipientBalance + feeAmount)
-    expect(finalUserTokenBalance.value.amount).to.eq((BigInt(initialUserTokenBalance.value.amount) + expectedTokenAmount).toString())
-    expect(finalVaultBalance.value.amount).to.eq((BigInt(initialVaultBalance.value.amount) - expectedTokenAmount).toString())
+    expect(finalUserTokenBalance.toString()).to.eq((initialUserTokenBalance + expectedTokenAmount).toString())
+    expect(finalVaultBalance.toString()).to.eq((initialVaultBalance - expectedTokenAmount).toString())
 
     expect(fromBN(finalBondingCurve.reserveSol) - fromBN(initialBondingCurve.reserveSol)).to.eq(expectedSolAmount)
     expect(fromBN(initialBondingCurve.reserveToken) - fromBN(finalBondingCurve.reserveToken)).to.eq(expectedTokenAmount)
@@ -472,12 +464,8 @@ describe('meme-pad', () => {
     const initialFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
     const initialBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
-    const initialUserTokenBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey)
-    )
-    const initialVaultBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
-    )
+    const initialUserTokenBalance = await getTokenBalance(user.publicKey)
+    const initialVaultBalance = await getTokenBalance(getBondingCurveAddress(), true)
 
     const tx = await sell(tokenAmount, solAmount)
 
@@ -486,20 +474,16 @@ describe('meme-pad', () => {
     const finalFeeRecipientBalance = await provider.connection.getBalance(feeRecipientKeypair.publicKey)
     const finalBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
 
-    const finalUserTokenBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, user.publicKey)
-    )
-    const finalVaultBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
-    )
+    const finalUserTokenBalance = await getTokenBalance(user.publicKey)
+    const finalVaultBalance = await getTokenBalance(getBondingCurveAddress(), true)
 
     const expectedFinalBalance = initialUserBalance + Number(solAmount) - feeAmount - tx.meta.fee
 
     expect(finalUserBalance).to.be.closeTo(expectedFinalBalance, 100)
     expect(finalBondingCurveBalance).to.eq(initialBondingCurveBalance - Number(solAmount))
     expect(finalFeeRecipientBalance).to.eq(initialFeeRecipientBalance + feeAmount)
-    expect(finalUserTokenBalance.value.amount).to.eq((BigInt(initialUserTokenBalance.value.amount) - tokenAmount).toString())
-    expect(finalVaultBalance.value.amount).to.eq((BigInt(initialVaultBalance.value.amount) + tokenAmount).toString())
+    expect(finalUserTokenBalance.toString()).to.eq((initialUserTokenBalance - tokenAmount).toString())
+    expect(finalVaultBalance.toString()).to.eq((initialVaultBalance + tokenAmount).toString())
 
     expect(fromBN(initialBondingCurve.reserveSol) - fromBN(finalBondingCurve.reserveSol)).to.eq(solAmount)
     expect(fromBN(finalBondingCurve.reserveToken) - fromBN(initialBondingCurve.reserveToken)).to.eq(tokenAmount)
@@ -509,27 +493,21 @@ describe('meme-pad', () => {
     const initialMigrationBalance = await provider.connection.getBalance(migrationKeypair.publicKey)
     const initialBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())
     const initialBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
-    const initialMigrationTokenBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, migrationKeypair.publicKey)
-    )
+    const initialMigrationTokenBalance = await getTokenBalance(migrationKeypair.publicKey)
 
     const tx = await withdraw()
 
     const finalMigrationBalance = await provider.connection.getBalance(migrationKeypair.publicKey)
     const finalBondingCurveBalance = await provider.connection.getBalance(getBondingCurveAddress())
     const finalBondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
-    const finalMigrationTokenBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, migrationKeypair.publicKey)
-    )
-    const finalVaultBalance = await provider.connection.getTokenAccountBalance(
-      getAssociatedTokenAddressSync(mintKeypair.publicKey, getBondingCurveAddress(), true)
-    )
+    const finalMigrationTokenBalance = await getTokenBalance(migrationKeypair.publicKey)
+    const finalVaultBalance = await getTokenBalance(getBondingCurveAddress(), true)
 
     expect(finalMigrationBalance).to.be.closeTo(initialMigrationBalance + initialBondingCurve.reserveSol.toNumber() - tx.meta.fee, 100)
     expect(finalBondingCurveBalance).to.eq(initialBondingCurveBalance - initialBondingCurve.reserveSol.toNumber())
     const remainingTokens = tokenSupply - tokenThreshold
-    expect(finalMigrationTokenBalance.value.amount).to.eq((BigInt(initialMigrationTokenBalance.value.amount) + remainingTokens).toString())
-    expect(finalVaultBalance.value.amount).to.eq('0')
+    expect(finalMigrationTokenBalance.toString()).to.eq((initialMigrationTokenBalance + remainingTokens).toString())
+    expect(finalVaultBalance.toString()).to.eq('0')
     expect(finalBondingCurve.reserveToken.toNumber()).to.eq(0)
     expect(finalBondingCurve.reserveSol.toNumber()).to.eq(0)
   }
@@ -596,6 +574,18 @@ describe('meme-pad', () => {
   async function getCirculatingSupply() {
     let bondingCurve = await program.account.bondingCurve.fetch(getBondingCurveAddress(), 'confirmed')
     return tokenThreshold - fromBN(bondingCurve.reserveToken)
+  }
+
+  async function getTokenBalance(owner: PublicKey, allowOwnerOffCurve = false) {
+    const address = getAssociatedTokenAddressSync(mintKeypair.publicKey, owner, allowOwnerOffCurve)
+    const accountInfo = await provider.connection.getAccountInfo(address)
+
+    if (accountInfo) {
+      const accountBalance = await provider.connection.getTokenAccountBalance(address)
+      return BigInt(accountBalance.value.amount)
+    } else {
+      return 0n
+    }
   }
 
   function toTokenValue(value: bigint) {

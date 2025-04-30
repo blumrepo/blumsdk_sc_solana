@@ -5,14 +5,13 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-meme_pad = "3ZEqFj8xa6ZG67et6ve5prKDymp2Po6im6B2HeRv5Zee"
+meme_pad = "CKnzvtXPSkQEd31KiRWw5fKR4HKpvNvFWXTKcApMGfze"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
-#cluster = "http://127.0.0.1:8899"
+cluster = "Devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
@@ -28,7 +27,6 @@ bind_address = "0.0.0.0"
 url = "https://api.mainnet-beta.solana.com"
 ledger = ".anchor/test-ledger"
 rpc_port = 8899
-args = ["--enable-extended-bigtable-metadata"]
 
 [[test.validator.clone]]
 address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
